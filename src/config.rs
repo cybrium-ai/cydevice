@@ -1,7 +1,7 @@
 //! Persistent enrolment config — stored in the user's config directory so
 //! the daemon and one-shot commands share state.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -74,8 +74,10 @@ impl Config {
         if !status.is_success() {
             bail!("register HTTP {}: {}", status, text);
         }
-        let parsed: serde_json::Value = serde_json::from_str(&text).context("parse register response")?;
-        let device_id = parsed.get("device_id")
+        let parsed: serde_json::Value =
+            serde_json::from_str(&text).context("parse register response")?;
+        let device_id = parsed
+            .get("device_id")
             .and_then(|v| v.as_str())
             .context("response missing device_id")?
             .to_string();

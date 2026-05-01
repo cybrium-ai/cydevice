@@ -6,10 +6,10 @@ use anyhow::Result;
 use chrono::Utc;
 use sysinfo::System;
 
-#[cfg(target_os = "macos")]
-mod macos;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
@@ -19,10 +19,10 @@ pub async fn collect() -> Result<PostureReport> {
     sys.refresh_memory();
 
     let hostname = System::host_name().unwrap_or_else(|| "unknown".into());
-    let kernel  = System::kernel_version().unwrap_or_default();
+    let kernel = System::kernel_version().unwrap_or_default();
     let os_name = System::name().unwrap_or_default();
-    let os_ver  = System::os_version().unwrap_or_default();
-    let uptime  = System::uptime();
+    let os_ver = System::os_version().unwrap_or_default();
+    let uptime = System::uptime();
 
     let mut report = PostureReport {
         schema: 1,
@@ -66,7 +66,8 @@ fn host_uid() -> String {
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = std::process::Command::new("ioreg")
-            .args(["-rd1", "-c", "IOPlatformExpertDevice"]).output()
+            .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+            .output()
         {
             let s = String::from_utf8_lossy(&out.stdout);
             for line in s.lines() {
@@ -150,8 +151,11 @@ fn derive_findings(r: &mut PostureReport) {
             "device.screen_lock.timeout_too_long",
             "medium",
             &format!("Screen lock timeout > 15min: {}", host),
-            format!("Idle timeout is {}s — SOC 2 CC6.6 expects ≤15min.",
-                       r.screen_lock.idle_timeout_secs.unwrap_or(0)).as_str(),
+            format!(
+                "Idle timeout is {}s — SOC 2 CC6.6 expects ≤15min.",
+                r.screen_lock.idle_timeout_secs.unwrap_or(0)
+            )
+            .as_str(),
             "Reduce the idle timeout to 600 seconds (10 minutes) or less.",
         ));
     }
@@ -163,8 +167,8 @@ fn derive_findings(r: &mut PostureReport) {
             &format!("Host firewall disabled: {}", host),
             "Inbound network filtering is not active.",
             match r.platform.as_str() {
-                "macos"   => "Enable: System Settings → Network → Firewall → Turn On.",
-                "linux"   => "Enable ufw / firewalld with default-deny on inbound.",
+                "macos" => "Enable: System Settings → Network → Firewall → Turn On.",
+                "linux" => "Enable ufw / firewalld with default-deny on inbound.",
                 "windows" => "Enable Windows Defender Firewall (all profiles).",
                 _ => "Enable the host firewall.",
             },
@@ -182,11 +186,18 @@ fn derive_findings(r: &mut PostureReport) {
     }
 
     if r.os_updates.pending_updates > 0 {
-        let sev = if r.os_updates.pending_updates > 5 { "high" } else { "medium" };
+        let sev = if r.os_updates.pending_updates > 5 {
+            "high"
+        } else {
+            "medium"
+        };
         r.findings.push(Finding::new(
             "device.os_updates.pending",
             sev,
-            &format!("{} pending OS updates on {}", r.os_updates.pending_updates, host),
+            &format!(
+                "{} pending OS updates on {}",
+                r.os_updates.pending_updates, host
+            ),
             "Operating-system patches are available but not installed.",
             "Run software updates and reboot if required.",
         ));
@@ -202,7 +213,11 @@ fn derive_findings(r: &mut PostureReport) {
     }
 
     if r.remote_access.ssh_enabled || r.remote_access.remote_desktop_enabled {
-        let svc = if r.remote_access.remote_desktop_enabled { "Remote Desktop / ARD" } else { "SSH" };
+        let svc = if r.remote_access.remote_desktop_enabled {
+            "Remote Desktop / ARD"
+        } else {
+            "SSH"
+        };
         r.findings.push(Finding::new(
             "device.remote_access.enabled",
             "medium",

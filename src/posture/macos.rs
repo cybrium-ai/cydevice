@@ -11,7 +11,10 @@ pub async fn populate(r: &mut PostureReport) {
         r.disk_encryption.enabled = s.contains("filevault is on");
         r.disk_encryption.mechanism = "FileVault".into();
         // Recovery-key escrow surface — best-effort via mdmclient
-        if let Ok(o2) = Command::new("/usr/libexec/mdmclient").arg("QueryDeviceInformation").output() {
+        if let Ok(o2) = Command::new("/usr/libexec/mdmclient")
+            .arg("QueryDeviceInformation")
+            .output()
+        {
             let s2 = String::from_utf8_lossy(&o2.stdout);
             if s2.to_lowercase().contains("personalrecoverykey") {
                 r.disk_encryption.recovery_key_escrowed = Some(true);
@@ -21,7 +24,8 @@ pub async fn populate(r: &mut PostureReport) {
 
     // Screen lock — defaults read com.apple.screensaver askForPassword{,Delay}
     let ask = read_user_default("com.apple.screensaver", "askForPassword").unwrap_or_default();
-    let delay = read_user_default("com.apple.screensaver", "askForPasswordDelay").unwrap_or_default();
+    let delay =
+        read_user_default("com.apple.screensaver", "askForPasswordDelay").unwrap_or_default();
     r.screen_lock.enabled = ask.trim() == "1";
     if let Ok(secs) = delay.trim().parse::<f64>() {
         r.screen_lock.idle_timeout_secs = Some(secs as u32);
@@ -29,7 +33,8 @@ pub async fn populate(r: &mut PostureReport) {
 
     // Firewall — socketfilterfw
     if let Ok(out) = Command::new("/usr/libexec/ApplicationFirewall/socketfilterfw")
-        .arg("--getglobalstate").output()
+        .arg("--getglobalstate")
+        .output()
     {
         let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
         r.firewall.enabled = s.contains("enabled");
@@ -41,7 +46,10 @@ pub async fn populate(r: &mut PostureReport) {
     r.antivirus.running = true;
     r.antivirus.product = "XProtect".into();
     r.antivirus.realtime_protection = Some(true);
-    if let Ok(out) = Command::new("/bin/ls").arg("/Library/LaunchDaemons").output() {
+    if let Ok(out) = Command::new("/bin/ls")
+        .arg("/Library/LaunchDaemons")
+        .output()
+    {
         let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
         for (key, name) in [
             ("crowdstrike", "CrowdStrike Falcon"),
@@ -60,29 +68,43 @@ pub async fn populate(r: &mut PostureReport) {
 
     // OS updates — softwareupdate -l (cached state, fast)
     if let Ok(out) = Command::new("/usr/sbin/softwareupdate").arg("-l").output() {
-        let s = String::from_utf8_lossy(&out.stderr) + std::borrow::Cow::from(String::from_utf8_lossy(&out.stdout).into_owned());
+        let s = String::from_utf8_lossy(&out.stderr)
+            + std::borrow::Cow::from(String::from_utf8_lossy(&out.stdout).into_owned());
         // Each update is prefixed with `* Label: ...` in modern versions.
-        let count = s.lines().filter(|l| l.trim_start().starts_with("* ") || l.contains("Label:")).count() as i32;
+        let count = s
+            .lines()
+            .filter(|l| l.trim_start().starts_with("* ") || l.contains("Label:"))
+            .count() as i32;
         r.os_updates.pending_updates = count;
     }
-    let auto = read_global_default("com.apple.SoftwareUpdate", "AutomaticCheckEnabled").unwrap_or_default();
+    let auto = read_global_default("com.apple.SoftwareUpdate", "AutomaticCheckEnabled")
+        .unwrap_or_default();
     if !auto.is_empty() {
         r.os_updates.auto_update_enabled = Some(auto.trim() == "1");
     }
 
     // Remote access
-    if let Ok(out) = Command::new("/usr/sbin/systemsetup").arg("-getremotelogin").output() {
+    if let Ok(out) = Command::new("/usr/sbin/systemsetup")
+        .arg("-getremotelogin")
+        .output()
+    {
         let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
         r.remote_access.ssh_enabled = s.contains("on") && !s.contains("off");
     }
     // ARD = ARDAgent
-    if let Ok(out) = Command::new("/bin/launchctl").args(["list", "com.apple.RemoteDesktop.agent"]).output() {
+    if let Ok(out) = Command::new("/bin/launchctl")
+        .args(["list", "com.apple.RemoteDesktop.agent"])
+        .output()
+    {
         r.remote_access.remote_desktop_enabled = out.status.success();
     }
 }
 
 fn read_user_default(domain: &str, key: &str) -> Option<String> {
-    let out = Command::new("/usr/bin/defaults").args(["read", domain, key]).output().ok()?;
+    let out = Command::new("/usr/bin/defaults")
+        .args(["read", domain, key])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -90,7 +112,10 @@ fn read_user_default(domain: &str, key: &str) -> Option<String> {
 }
 
 fn read_global_default(domain: &str, key: &str) -> Option<String> {
-    let out = Command::new("/usr/bin/defaults").args(["read", domain, key]).output().ok()?;
+    let out = Command::new("/usr/bin/defaults")
+        .args(["read", domain, key])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }

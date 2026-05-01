@@ -64,7 +64,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Register { url, api_key, label } => {
+        Command::Register {
+            url,
+            api_key,
+            label,
+        } => {
             let cfg = config::Config::register(&url, &api_key, label).await?;
             println!("Registered device_id={} at {}", cfg.device_id, cfg.url);
         }
@@ -76,11 +80,19 @@ async fn main() -> Result<()> {
             let cfg = config::Config::load()?;
             let report = posture::collect().await?;
             upload::send(&cfg, &report).await?;
-            tracing::info!("uploaded — device_id={} hostname={}", cfg.device_id, report.hostname);
+            tracing::info!(
+                "uploaded — device_id={} hostname={}",
+                cfg.device_id,
+                report.hostname
+            );
         }
         Command::Run { interval } => {
             let cfg = config::Config::load()?;
-            tracing::info!("daemon mode — interval={}s device_id={}", interval, cfg.device_id);
+            tracing::info!(
+                "daemon mode — interval={}s device_id={}",
+                interval,
+                cfg.device_id
+            );
             loop {
                 match posture::collect().await {
                     Ok(report) => {
@@ -100,7 +112,10 @@ async fn main() -> Result<()> {
             println!("URL:        {}", cfg.url);
             println!("device_id:  {}", cfg.device_id);
             println!("label:      {}", cfg.label.unwrap_or_default());
-            println!("api_key:    ****{}", &cfg.api_key[cfg.api_key.len().saturating_sub(4)..]);
+            println!(
+                "api_key:    ****{}",
+                &cfg.api_key[cfg.api_key.len().saturating_sub(4)..]
+            );
         }
         Command::Version => {
             println!("cydevice {}", env!("CARGO_PKG_VERSION"));
