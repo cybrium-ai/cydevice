@@ -1,0 +1,59 @@
+[package]
+name = "cydevice"
+version = "0.1.0"
+edition = "2021"
+authors = ["Cybrium <eng@cybrium.ai>"]
+description = "Host-side device posture agent for non-MDM environments"
+license = "Apache-2.0"
+repository = "https://github.com/cybrium-ai/cydevice"
+readme = "README.md"
+keywords = ["security", "compliance", "device", "posture", "agent"]
+
+[[bin]]
+name = "cydevice"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "fs", "process"] }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Identifiers
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Hostname / system info — cross-platform reader for OS / kernel version, etc.
+sysinfo = "0.32"
+
+# Directory paths (config / state file location)
+directories = "5"
+
+# Platform-specific helpers
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.52"
+
+[profile.release]
+opt-level = "z"      # optimise for size — endpoint binary
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
