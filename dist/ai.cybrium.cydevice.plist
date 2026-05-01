@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    macOS launchd agent for cydevice.
+
+    Install (per-user):
+      cp ai.cybrium.cydevice.plist ~/Library/LaunchAgents/
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.cybrium.cydevice.plist
+      launchctl kickstart -k gui/$(id -u)/ai.cybrium.cydevice
+
+    Install (system-wide, requires admin):
+      sudo cp ai.cybrium.cydevice.plist /Library/LaunchDaemons/
+      sudo launchctl bootstrap system /Library/LaunchDaemons/ai.cybrium.cydevice.plist
+
+    Logs:
+      tail -f /tmp/cydevice.out /tmp/cydevice.err
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.cybrium.cydevice</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/cydevice</string>
+        <string>run</string>
+        <string>--interval</string>
+        <string>21600</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/cydevice.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/cydevice.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>RUST_LOG</key>
+        <string>info</string>
+    </dict>
+</dict>
+</plist>

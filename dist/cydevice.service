@@ -1,0 +1,42 @@
+# systemd service unit for cydevice (Linux).
+#
+# Install:
+#   sudo cp cydevice.service cydevice.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cydevice.timer
+#
+# Manual one-shot:
+#   sudo systemctl start cydevice.service
+#
+# Logs:
+#   journalctl -u cydevice.service -f
+
+[Unit]
+Description=Cybrium device posture agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cydevice upload
+# Run as the enrolled user — config lives in their XDG_CONFIG_HOME.
+# Override with `systemctl edit cydevice` if you enrolled as root.
+User=root
+Environment=RUST_LOG=info
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

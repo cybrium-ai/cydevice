@@ -1,0 +1,183 @@
+# Release workflow — fires on a tag like `v0.1.0` and produces signed +
+# notarised binaries for every supported target, attached to a GitHub
+# release. Secrets required (set in repo Settings → Secrets):
+#
+#   macOS code-signing & notarisation:
+#     APPLE_DEVELOPER_ID_CERT     — base64 of the Developer ID Application .p12
+#     APPLE_DEVELOPER_ID_CERT_PWD — password for that .p12
+#     APPLE_KEYCHAIN_PWD          — any random string; ephemeral keychain pwd
+#     APPLE_ID                    — Apple ID email
+#     APPLE_TEAM_ID               — 10-char team identifier
+#     APPLE_APP_PASSWORD          — app-specific password for `notarytool`
+#
+#   Windows Authenticode:
+#     WINDOWS_CERT                — base64 of code-signing .pfx
+#     WINDOWS_CERT_PWD            — password for that .pfx
+#
+# When a secret is missing, the corresponding signing step is skipped so
+# the workflow still builds usable (unsigned) artefacts for testing.
+
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write           # needed to upload to the release
+
+jobs:
+  build:
+    name: build · ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,   target: aarch64-apple-darwin,        bin: cydevice,     archive: cydevice-darwin-arm64.tar.gz }
+          - { os: macos-latest,   target: x86_64-apple-darwin,         bin: cydevice,     archive: cydevice-darwin-x86_64.tar.gz }
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-musl,   bin: cydevice,     archive: cydevice-linux-x86_64.tar.gz }
+          - { os: ubuntu-latest,  target: aarch64-unknown-linux-musl,  bin: cydevice,     archive: cydevice-linux-arm64.tar.gz, cross: true }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,      bin: cydevice.exe, archive: cydevice-windows-x86_64.zip }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl-tools (Linux x86)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install cross (linux-arm64)
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build
+        shell: bash
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      # ── macOS: codesign with hardened runtime, then notarize + staple ────
+      - name: Set up keychain (macOS)
+        if: startsWith(matrix.os, 'macos') && env.CERT != ''
+        env:
+          CERT: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
+          CERT_PWD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PWD }}
+          KEYCHAIN_PWD: ${{ secrets.APPLE_KEYCHAIN_PWD }}
+        run: |
+          set -e
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          echo "$CERT" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k "$KEYCHAIN_PATH" -P "$CERT_PWD" -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychain -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+      - name: Codesign + notarize (macOS)
+        if: startsWith(matrix.os, 'macos') && env.CERT != ''
+        env:
+          CERT: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -e
+          BIN=target/${{ matrix.target }}/release/${{ matrix.bin }}
+          IDENT=$(security find-identity -v -p codesigning $RUNNER_TEMP/build.keychain-db | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          codesign --force --options runtime --timestamp --sign "$IDENT" "$BIN"
+          codesign --verify --strict --verbose=2 "$BIN"
+          # notarytool requires a zip (or a signed pkg/dmg)
+          (cd target/${{ matrix.target }}/release && zip -q cydevice-notarize.zip ${{ matrix.bin }})
+          xcrun notarytool submit target/${{ matrix.target }}/release/cydevice-notarize.zip \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          # Plain Mach-O binaries can't be stapled — notarisation acceptance is
+          # carried by the ticket on Apple's servers and verified at first
+          # launch via Gatekeeper. Distribute via tarball below.
+
+      # ── Windows: Authenticode sign with the .pfx ────────────────────────
+      - name: Sign (Windows)
+        if: matrix.os == 'windows-latest' && env.WIN_CERT != ''
+        env:
+          WIN_CERT: ${{ secrets.WINDOWS_CERT }}
+          WIN_CERT_PWD: ${{ secrets.WINDOWS_CERT_PWD }}
+        shell: pwsh
+        run: |
+          $bin = "target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          $pfx = "$env:RUNNER_TEMP\code.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WIN_CERT))
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign `
+            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+            /f $pfx /p $env:WIN_CERT_PWD `
+            $bin
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" verify /pa $bin
+
+      # ── Package ─────────────────────────────────────────────────────────
+      - name: Package (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          STAGE=$(mktemp -d)
+          cp target/${{ matrix.target }}/release/${{ matrix.bin }} "$STAGE/"
+          cp README.md LICENSE "$STAGE/" 2>/dev/null || true
+          cp -r dist "$STAGE/dist"
+          tar -C "$STAGE" -czf "${{ matrix.archive }}" .
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" stage/
+          Copy-Item README.md, LICENSE -ErrorAction SilentlyContinue stage/
+          Compress-Archive -Path stage/* -DestinationPath ${{ matrix.archive }}
+
+      - name: Compute SHA-256
+        shell: bash
+        run: |
+          if command -v sha256sum >/dev/null; then
+            sha256sum ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
+          else
+            shasum -a 256 ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
+          fi
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  bump-formula:
+    name: Bump Homebrew formula
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger tap update
+        if: env.TAP_TOKEN != ''
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          curl -fsSL -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TAP_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/cybrium-ai/homebrew-cli/dispatches \
+            -d "{\"event_type\":\"cydevice-release\",\"client_payload\":{\"version\":\"${TAG#v}\",\"tag\":\"$TAG\"}}"

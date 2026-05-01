@@ -1,0 +1,16 @@
+# systemd timer — fires `cydevice.service` every 6 hours, with a small
+# randomised delay so a fleet of laptops doesn't hammer the API at the
+# same moment.
+
+[Unit]
+Description=Cybrium device posture — every 6h
+Requires=cydevice.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=6h
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
