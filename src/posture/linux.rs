@@ -241,9 +241,18 @@ fn populate_hardware_root_of_trust(r: &mut PostureReport) {
 
 fn linux_tpm_vendor(sysfs_root: &Path) -> Option<String> {
     for name in ["manufacturer_name", "manufacturer", "description"] {
-        let value = fs::read_to_string(sysfs_root.join("device").join(name))
+        // Try `<root>/device/<name>` first, then `<root>/<name>`.
+        // Move on to the next candidate if both reads fail — the
+        // earlier `.ok()?` form short-circuited the whole function on
+        // the first missing file, which broke when only one of the
+        // alternatives was present (the test fixture writes
+        // `device/manufacturer` only).
+        let value = match fs::read_to_string(sysfs_root.join("device").join(name))
             .or_else(|_| fs::read_to_string(sysfs_root.join(name)))
-            .ok()?;
+        {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());

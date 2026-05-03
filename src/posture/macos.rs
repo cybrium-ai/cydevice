@@ -181,21 +181,6 @@ fn has_t2_bridge() -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{has_apple_silicon, process_running};
-
-    #[test]
-    fn process_running_is_safe_for_missing_process() {
-        assert!(!process_running("cydevice-process-that-should-not-exist"));
-    }
-
-    #[test]
-    fn apple_silicon_detector_matches_arch_constant() {
-        assert_eq!(has_apple_silicon(), std::env::consts::ARCH == "aarch64");
-    }
-}
-
 fn read_user_default(domain: &str, key: &str) -> Option<String> {
     let out = Command::new("/usr/bin/defaults")
         .args(["read", domain, key])
@@ -216,4 +201,19 @@ fn read_global_default(domain: &str, key: &str) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{has_apple_silicon, process_running};
+
+    #[test]
+    fn process_running_is_safe_for_missing_process() {
+        assert!(!process_running("cydevice-process-that-should-not-exist"));
+    }
+
+    #[test]
+    fn apple_silicon_detector_matches_arch_constant() {
+        assert_eq!(has_apple_silicon(), std::env::consts::ARCH == "aarch64");
+    }
 }
