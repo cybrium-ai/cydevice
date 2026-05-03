@@ -333,7 +333,7 @@ fn parse_kde_timeout_secs(raw: &str) -> Option<u32> {
 }
 
 fn parse_sway_screen_lock(raw: &str) -> Option<(bool, Option<u32>)> {
-    let mut best_timeout = None;
+    let mut best_timeout: Option<u32> = None;
     let mut has_lock = false;
 
     for line in raw.lines() {
